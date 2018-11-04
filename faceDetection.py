@@ -159,7 +159,7 @@ for filePath in filesList:
         continue
     else:
         x, y, w, h = face
-        image = cv2.rectangle(image,(x,y),(x+w,y+h),(255,0,0),2)
+        image = cv2.rectangle(image, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
     # Extract Face
     delta = 0.3   # Add buffer to extract the entire face
@@ -208,7 +208,14 @@ for filePath in filesList:
     name = [x for x in name if len(x.replace(" ", "")) > 4][0]
 
     print("Name: ", name)
-    print("-----------------------------")
 
-    cv2.imshow("img", image)
-    cv2.waitKey(0)
+    # Extract DOB
+    dobROI = crop_image(image, (y-int(h*1.5), y+int(h*0.8), 0, x-int(h*0.8)))
+    dob = perform_OCR(dobROI, threshold=20)
+    dob = re.search(r'(\d+ */\d+/ *\d+)', dob, flags=re.IGNORECASE).group()
+
+    print("DOB: ", dob)
+    print("----------------------------")
+
+    # cv2.imshow("img", dobROI)
+    # cv2.waitKey(0)
