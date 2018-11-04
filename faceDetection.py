@@ -14,7 +14,8 @@ inputFolder = r"Images"
 useVisionAPI = False
 visionAPIKey = "ENTER_VISION_API_KEY_HERE"
 
-def image_resize(image, width = None, height = None, inter = cv2.INTER_AREA):
+
+def image_resize(image, width=None, height=None, inter=cv2.INTER_AREA):
     """  Resize image keeping same aspect ratio and specific height or width """
 
     # initialize the dimensions of the image to be resized and
@@ -42,74 +43,106 @@ def image_resize(image, width = None, height = None, inter = cv2.INTER_AREA):
         dim = (width, int(h * r))
 
     # resize the image
-    resized = cv2.resize(image, dim, interpolation = inter)
+    resized = cv2.resize(image, dim, interpolation=inter)
 
     # return the resized image
     return resized
 
-def performOCR(image,threshold=0):
+
+def perform_OCR(image, threshold=0):
     """ Extract text from image. Filter the results according to the thresholds (Used when using tesseract) """
 
     if useVisionAPI:
 
         # Convert image to base64 format
-        base64Image = base64.b64encode(cv2.imencode('.jpg', image)[1]).decode('utf-8')
+        base64Image = base64.b64encode(
+            cv2.imencode('.jpg', image)[1]).decode('utf-8')
 
         jsonObject = {
             "requests": [
                 {
-                "image": {
-                    "content": base64Image
-                },
-                "features": [
-                    {
-                    "type": "DOCUMENT_TEXT_DETECTION"
-                    }
-                ]
+                    "image": {
+                        "content": base64Image
+                    },
+                    "features": [
+                        {
+                            "type": "DOCUMENT_TEXT_DETECTION"
+                        }
+                    ]
                 }
             ]
         }
 
-        url = "https://vision.googleapis.com/v1/images:annotate?key={}".format(visionAPIKey) 
+        url = "https://vision.googleapis.com/v1/images:annotate?key={}".format(
+            visionAPIKey)
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        r = requests.post(url, data=json.dumps(jsonObject), headers=headers).json()
+        r = requests.post(url, data=json.dumps(
+            jsonObject), headers=headers).json()
 
         # Find the ocr text from the output JSON
-        extractedData = r.get("responses",[{}])[0].get("fullTextAnnotation",{}).get("text","")
+        extractedData = r.get("responses", [{}])[0].get(
+            "fullTextAnnotation", {}).get("text", "")
     else:
         extractedData = ""
 
-    if extractedData.strip()!="":
+    if extractedData.strip() != "":
         return extractedData
     else:
 
-        # Using pytesseract extract text from image. Filter the results according to the thresholds 
-        data = pytesseract.image_to_data(image, config='--psm 6 --oem 1', output_type= pytesseract.Output.STRING)
+        # Using pytesseract extract text from image. Filter the results according to the thresholds
+        data = pytesseract.image_to_data(
+            image, config='--psm 6 --oem 1', output_type=pytesseract.Output.STRING)
         data = data.split("\n")
         response = ""
 
         # Parse the tesseract output
         for record in data[1:]:
             record = record.split("\t")
-            if len(record)==12:
-                if record[11].strip()=="":
-                    response+="\n"
+            if len(record) == 12:
+                if record[11].strip() == "":
+                    response += "\n"
                 elif int(record[10]) >= threshold:
-                    response+=record[11]+" "
+                    response += record[11]+" "
 
         return response
 
-def cropImage(img,rect):
+
+def crop_image(img, rect):
     """ Crop image after adding constraints to make sure they dont go out of bounds"""
-    h,w,_ = img.shape
-    y1,y2,x1,x2 = rect
-    arr = [0 if x<0 else x for x in [x1,x2,y1,y2]]
-    x1,x2,y1,y2 = [w-1 if x>w else x for x in arr[:2]]+[h-1 if x>h else x for x in arr[2:]]
-    return img[y1:y2,x1:x2]
+    h, w, _ = img.shape
+    y1, y2, x1, x2 = rect
+    arr = [0 if x < 0 else x for x in [x1, x2, y1, y2]]
+    x1, x2, y1, y2 = [w-1 if x > w else x for x in arr[:2]] + \
+        [h-1 if x > h else x for x in arr[2:]]
+    return img[y1:y2, x1:x2]
 
 
-face_cascade = cv2.CascadeClassifier(
+def find_face(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    faces = faceCascade.detectMultiScale(gray, 1.3, 5)
+
+    if len(faces) == 0:
+        return []
+
+    if len(faces) > 1:
+        # More than One face found. Likely one is a false positive
+        # Check for eyes in the face
+        for face in faces:
+            x, y, w, h = face
+            roi = gray[y:y+h, x:x+w]
+            eyes = eyeCascade.detectMultiScale(roi)
+            if len(eyes) > 0:
+                # If eyes are found return face
+                return face
+
+    return faces[0]
+
+
+faceCascade = cv2.CascadeClassifier(
     "Models/haarcascade_frontalface_default.xml")
+
+eyeCascade = cv2.CascadeClassifier(
+    "Models/haarcascade_eye.xml")
 
 filesList = glob(inputFolder+"/*.jpg") + glob(inputFolder+"/*.png")
 
@@ -118,58 +151,64 @@ for filePath in filesList:
     pancardNumber = ""
     image = cv2.imread(filePath)
     image = image_resize(image, 500)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    if len(faces)==0:
-        print ("Pancard Not Found")
+    face = find_face(image)
+
+    if len(face) == 0:
+        print("Detection Failed")
         continue
-
-    x,y,w,h = faces[0]
+    else:
+        x, y, w, h = face
+        image = cv2.rectangle(image,(x,y),(x+w,y+h),(255,0,0),2)
 
     # Extract Face
-    delta = 0.3   # Add buffer to extract the entire face 
-    face = image[y-int(delta*h):y+h+int(delta*h), x-int(delta*w):x+w+int(delta*w)]
+    delta = 0.3   # Add buffer to extract the entire face
+    face = image[y-int(delta*h):y+h+int(delta*h), x -
+                 int(delta*w):x+w+int(delta*w)]
 
     # Extract Pan Number
-    panROI = cropImage(image,(y-int(h*0.5),y+int(h*0.8),0,x-int(h*0.8)))
-    pancardNumber = performOCR(panROI,threshold=20)
+    panROI = crop_image(image, (y-int(h*0.5), y+int(h*0.8), 0, x-int(h*0.8)))
+    pancardNumber = perform_OCR(panROI, threshold=20)
     # Remove noise
-    regexMatch = re.search(r"\bpermanant\b[^\n]*",pancardNumber,flags=re.IGNORECASE)
+    regexMatch = re.search(
+        r"\bpermanant\b[^\n]*", pancardNumber, flags=re.IGNORECASE)
     if not regexMatch:
-        regexMatch = re.search(r"\baccount\b[^\n]*",pancardNumber,flags=re.IGNORECASE)
+        regexMatch = re.search(
+            r"\baccount\b[^\n]*", pancardNumber, flags=re.IGNORECASE)
     if not regexMatch:
-        regexMatch = re.search(r"\bnumber\b[^\n]*",pancardNumber,flags=re.IGNORECASE)
+        regexMatch = re.search(
+            r"\bnumber\b[^\n]*", pancardNumber, flags=re.IGNORECASE)
 
     if regexMatch:
         pancardNumber = pancardNumber[regexMatch.end():].strip()
 
-        regexMatch = re.search(r"[^a-z0-9 ]",pancardNumber,flags=re.IGNORECASE)
+        regexMatch = re.search(
+            r"[^a-z0-9 ]", pancardNumber, flags=re.IGNORECASE)
         if regexMatch:
             pancardNumber = pancardNumber[:regexMatch.start()].strip()
-    
-    print ("Pancard Number: ",pancardNumber)
+
+    print("Pancard Number: ", pancardNumber)
 
     # Extract Name
-    nameROI = cropImage(image,(y-int(h*2.1),y-int(h*0.7),0,x-int(h*0.8)))
-    name = performOCR(nameROI,threshold=20)
-    regexMatch = re.search(r"\bincome\b[^\n]*",name,flags=re.IGNORECASE)
+    nameROI = crop_image(image, (y-int(h*2.1), y-int(h*0.7), 0, x-int(h*0.8)))
+    name = perform_OCR(nameROI, threshold=20)
+    regexMatch = re.search(r"\bincome\b[^\n]*", name, flags=re.IGNORECASE)
     if not regexMatch:
-        regexMatch = re.search(r"\btax\b[^\n]*",name,flags=re.IGNORECASE)
+        regexMatch = re.search(r"\btax\b[^\n]*", name, flags=re.IGNORECASE)
     if not regexMatch:
-        regexMatch = re.search(r"\bdepartment\b[^\n]*",name,flags=re.IGNORECASE)
+        regexMatch = re.search(
+            r"\bdepartment\b[^\n]*", name, flags=re.IGNORECASE)
 
     if regexMatch:
         name = name[regexMatch.end():].strip()
-    
-    name = re.sub(r" +"," ",name).strip()
-    
-    name = name.split("\n")
-    name = [x for x in name if len(x.replace(" ",""))>4][0]
 
-    print ("Name: ",name)
-    print ("-----------------------------")
-   
-    cv2.imshow("img",nameROI)
+    name = re.sub(r" +", " ", name).strip()
+
+    name = name.split("\n")
+    name = [x for x in name if len(x.replace(" ", "")) > 4][0]
+
+    print("Name: ", name)
+    print("-----------------------------")
+
+    cv2.imshow("img", image)
     cv2.waitKey(0)
-    
