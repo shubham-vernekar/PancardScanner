@@ -7,7 +7,7 @@ import json
 import pytesseract
 import re
 
-inputFolder = "Images"
+inputFolder = r"Images"
 
 # Make this True if you want to use Google's Vision cloud API which is more robust than Tesseract OCR (open-source).
 # To use vision API you will need an API key https://cloud.google.com/vision/
@@ -121,6 +121,10 @@ for filePath in filesList:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    if len(faces)==0:
+        print ("Pancard Not Found")
+        continue
+
     x,y,w,h = faces[0]
 
     # Extract Face
@@ -143,10 +147,29 @@ for filePath in filesList:
         regexMatch = re.search(r"[^a-z0-9 ]",pancardNumber,flags=re.IGNORECASE)
         if regexMatch:
             pancardNumber = pancardNumber[:regexMatch.start()].strip()
+    
+    print ("Pancard Number: ",pancardNumber)
 
-    print (pancardNumber)
+    # Extract Name
+    nameROI = cropImage(image,(y-int(h*2.1),y-int(h*0.7),0,x-int(h*0.8)))
+    name = performOCR(nameROI,threshold=20)
+    regexMatch = re.search(r"\bincome\b[^\n]*",name,flags=re.IGNORECASE)
+    if not regexMatch:
+        regexMatch = re.search(r"\btax\b[^\n]*",name,flags=re.IGNORECASE)
+    if not regexMatch:
+        regexMatch = re.search(r"\bdepartment\b[^\n]*",name,flags=re.IGNORECASE)
 
-    # cv2.imshow("img",panROI)
-    # cv2.waitKey(0)
-    # quit()
+    if regexMatch:
+        name = name[regexMatch.end():].strip()
+    
+    name = re.sub(r" +"," ",name).strip()
+    
+    name = name.split("\n")
+    name = [x for x in name if len(x.replace(" ",""))>4][0]
+
+    print ("Name: ",name)
+    print ("-----------------------------")
+   
+    cv2.imshow("img",nameROI)
+    cv2.waitKey(0)
     
