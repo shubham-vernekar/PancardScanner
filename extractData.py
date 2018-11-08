@@ -1,18 +1,10 @@
 import cv2
 import numpy as np
-from glob import glob
 import requests
 import base64
 import json
 import pytesseract
 import re
-
-inputFolder = r"Images"
-
-# Make this True if you want to use Google's Vision cloud API which is more robust than Tesseract OCR (open-source).
-# To use vision API you will need an API key https://cloud.google.com/vision/
-useVisionAPI = False
-visionAPIKey = "ENTER_VISION_API_KEY_HERE"
 
 
 def image_resize(image, width=None, height=None, inter=cv2.INTER_AREA):
@@ -49,7 +41,7 @@ def image_resize(image, width=None, height=None, inter=cv2.INTER_AREA):
     return resized
 
 
-def perform_OCR(image, threshold=0):
+def perform_OCR(image, useVisionAPI, visionAPIKey, threshold=0):
     """ Extract text from image. Filter the results according to the thresholds (Used when using tesseract) """
 
     if useVisionAPI:
@@ -146,7 +138,7 @@ def find_face(image):
     return faces[0]
 
 
-def extract_pancard_data(filePath):
+def extract_pancard_data(filePath, useVisionAPI=False, visionAPIKey=""):
     """ Extact details from pancard. Returns Pancard number, Name, Date of Birth and Photo of the face """
 
     image = cv2.imread(filePath)
@@ -169,7 +161,8 @@ def extract_pancard_data(filePath):
 
     # Extract Pan Number
     panROI = crop_image(image, (y-int(h*0.5), y+int(h*0.8), 0, x-int(h*0.8)))
-    pancardNumber = perform_OCR(panROI, threshold=20)
+    pancardNumber = perform_OCR(
+        panROI, useVisionAPI, visionAPIKey, threshold=20)
     # Remove noise
     regexMatch = re.search(
         r"\bpermanant\b[^\n]*", pancardNumber, flags=re.IGNORECASE)
@@ -190,7 +183,7 @@ def extract_pancard_data(filePath):
 
     # Extract Name
     nameROI = crop_image(image, (y-int(h*2.1), y-int(h*0.7), 0, x-int(h*0.8)))
-    name = perform_OCR(nameROI, threshold=20)
+    name = perform_OCR(nameROI, useVisionAPI, visionAPIKey, threshold=20)
     regexMatch = re.search(r"\bincome\b[^\n]*", name, flags=re.IGNORECASE)
     if not regexMatch:
         regexMatch = re.search(r"\btax\b[^\n]*", name, flags=re.IGNORECASE)
@@ -208,23 +201,7 @@ def extract_pancard_data(filePath):
 
     # Extract DOB
     dobROI = crop_image(image, (y-int(h*1.5), y+int(h*0.8), 0, x-int(h*0.8)))
-    dob = perform_OCR(dobROI, threshold=20)
+    dob = perform_OCR(dobROI, useVisionAPI, visionAPIKey, threshold=20)
     dob = re.search(r'(\d+ */\d+/ *\d+)', dob, flags=re.IGNORECASE).group()
 
     return pancardNumber, name, dob, faceROI
-
-
-# Read all images in the folder
-filesList = glob(inputFolder+"/*.jpg") + glob(inputFolder+"/*.png")
-
-for filePath in filesList:
-
-    pancardNumber, name, dob, face = extract_pancard_data(filePath)
-
-    print("Pancard Number: ", pancardNumber)
-    print("Name: ", name)
-    print("DOB: ", dob)
-    print("----------------------------")
-
-    cv2.imshow("img", face)
-    cv2.waitKey(0)
