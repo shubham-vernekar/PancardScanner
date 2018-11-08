@@ -118,6 +118,14 @@ def crop_image(img, rect):
 
 
 def find_face(image):
+    """ Finds human faces in the image """
+
+    faceCascade = cv2.CascadeClassifier(
+        "Models/haarcascade_frontalface_default.xml")
+
+    eyeCascade = cv2.CascadeClassifier(
+        "Models/haarcascade_eye.xml")
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     faces = faceCascade.detectMultiScale(gray, 1.3, 5)
 
@@ -138,33 +146,26 @@ def find_face(image):
     return faces[0]
 
 
-faceCascade = cv2.CascadeClassifier(
-    "Models/haarcascade_frontalface_default.xml")
+def extract_pancard_data(filePath):
+    """ Extact details from pancard. Returns Pancard number, Name, Date of Birth and Photo of the face """
 
-eyeCascade = cv2.CascadeClassifier(
-    "Models/haarcascade_eye.xml")
-
-filesList = glob(inputFolder+"/*.jpg") + glob(inputFolder+"/*.png")
-
-
-for filePath in filesList:
-    pancardNumber = ""
     image = cv2.imread(filePath)
-    image = image_resize(image, 500)
 
+    image = image_resize(image, 500)
     face = find_face(image)
 
     if len(face) == 0:
-        print("Detection Failed")
-        continue
+        return None, "", "", ""
     else:
         x, y, w, h = face
-        image = cv2.rectangle(image, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
     # Extract Face
+    x, y, w, h = face
+    # image = cv2.rectangle(image, (x, y), (x+w, y+h), (255, 0, 0), 2)
+
     delta = 0.3   # Add buffer to extract the entire face
-    face = image[y-int(delta*h):y+h+int(delta*h), x -
-                 int(delta*w):x+w+int(delta*w)]
+    faceROI = image[y-int(delta*h):y+h+int(delta*h), x -
+                    int(delta*w):x+w+int(delta*w)]
 
     # Extract Pan Number
     panROI = crop_image(image, (y-int(h*0.5), y+int(h*0.8), 0, x-int(h*0.8)))
@@ -187,8 +188,6 @@ for filePath in filesList:
         if regexMatch:
             pancardNumber = pancardNumber[:regexMatch.start()].strip()
 
-    print("Pancard Number: ", pancardNumber)
-
     # Extract Name
     nameROI = crop_image(image, (y-int(h*2.1), y-int(h*0.7), 0, x-int(h*0.8)))
     name = perform_OCR(nameROI, threshold=20)
@@ -207,15 +206,25 @@ for filePath in filesList:
     name = name.split("\n")
     name = [x for x in name if len(x.replace(" ", "")) > 4][0]
 
-    print("Name: ", name)
-
     # Extract DOB
     dobROI = crop_image(image, (y-int(h*1.5), y+int(h*0.8), 0, x-int(h*0.8)))
     dob = perform_OCR(dobROI, threshold=20)
     dob = re.search(r'(\d+ */\d+/ *\d+)', dob, flags=re.IGNORECASE).group()
 
+    return pancardNumber, name, dob, faceROI
+
+
+# Read all images in the folder
+filesList = glob(inputFolder+"/*.jpg") + glob(inputFolder+"/*.png")
+
+for filePath in filesList:
+
+    pancardNumber, name, dob, face = extract_pancard_data(filePath)
+
+    print("Pancard Number: ", pancardNumber)
+    print("Name: ", name)
     print("DOB: ", dob)
     print("----------------------------")
 
-    # cv2.imshow("img", dobROI)
-    # cv2.waitKey(0)
+    cv2.imshow("img", face)
+    cv2.waitKey(0)
